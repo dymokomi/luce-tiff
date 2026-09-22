@@ -1,0 +1,25 @@
+#prisma 4.0
+def package "luce-tiff" {
+    str owner = "dymokomi"
+    str version = "0.1.0"
+    str kind = "package"
+    str language = "luce-base"
+    str description = "A TIFF reader and writer for Luce/Base: strips and tiles, uncompressed, PackBits, LZW and Deflate."
+    str readme = "README.md"
+
+    def dependency "luce-raster" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-raster"
+    }
+
+    def dependency "luce-deflate" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-deflate"
+    }
+
+    def export "tiff" {
+        str module = "luce_tiff.tiff"
+    }
+}
