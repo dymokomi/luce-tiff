@@ -2,7 +2,7 @@
 import memory
 import math
 import binary
-import deflate
+import compress
 from binary import Reader, Buffer
 from raster import Raster, Chunk, SampleType
 from raster_errors import corrupt, unsupported, invalid, limit
@@ -281,7 +281,7 @@ pub func decode_chunk(image: Raster*, index: usize) -> !:
     elif image.compression == 32773:
         try packbits(data, raw)
     else:
-        try deflate.inflate(data, raw)
+        try compress.inflate(data, raw)
     let source_width = image.height if image.orientation >= 5 else image.width
     let source_height = image.width if image.orientation >= 5 else image.height
     let cols = source_width - chunk.x if source_width - chunk.x < chunk.width else chunk.width
@@ -403,7 +403,9 @@ pub func encode(image: const Raster*, output: Buffer*, compression: str = "zip",
         if compression == "none":
             try output.put(raw.view())
         else:
-            try deflate.compress(raw.view(), output)
+            let packed = try compress.compress(raw.view())
+            defer free(packed) in memory.heap
+            try output.put(packed)
         sizes[index] = (u64)output.used - offsets[index]
     let slot: usize = 8 if big else 4
     let offsets_at = (u64)output.used
