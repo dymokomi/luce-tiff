@@ -450,3 +450,89 @@ pub func encode(image: const Raster*, output: Buffer*, compression: str = "zip",
         try entry(output, 338, 3, 1, 2, big)
     try entry(output, 339, 3, 1, sample_kind, big)
     try output.uint(0, slot)
+
+# mark: Rows of chunks ========================================================================
+
+## Receives a TIFF's rows `top..<top + part.height` decoded into `part`, a raster
+## of just those rows with the source's channels. Valid only during the call.
+pub type RowsSink = func(void*?, usize, const Raster*) -> unit!
+
+## Whether a probed TIFF decodes a row of strips or tiles at a time: upright,
+## its chunks in rows from the top (for each plane).
+pub func streams_by_rows(image: const Raster*) -> bool:
+    if image.orientation != 1 or image.chunks.length == 0:
+        return false
+    let planes = image.channels.length if image.planar == 2 else 1
+    if image.chunks.length % planes != 0:
+        return false
+    let per_plane = image.chunks.length // planes
+    for index in 1..<image.chunks.length:
+        if index % per_plane != 0 and image.chunks[index].y < image.chunks[index - 1].y:
+            return false
+    return true
+
+## A probed TIFF decoded a row of strips or tiles at a time (`streams_by_rows`):
+## each row of chunks into a raster of just their rows, handed to `sink`, so the
+## whole picture is never held. False, with nothing decoded, for any other TIFF.
+pub func decode_rows(image: Raster*, sink: RowsSink, context: void*?) -> bool!:
+    if not streams_by_rows(image):
+        return false
+    let planes = image.channels.length if image.planar == 2 else 1
+    let per_plane = image.chunks.length // planes
+    var first: usize = 0
+    while first < per_plane:
+        var last = first + 1
+        while last < per_plane and image.chunks[last].y == image.chunks[first].y:
+            last += 1
+        try decode_chunk_row(image, first, last, per_plane, sink, context)
+        first = last
+    return true
+
+## Chunks `first..<last` of each plane (one row of them) decoded into a raster
+## of just their rows, the chunks read as if at its top, and handed to `sink`.
+func decode_chunk_row(image: Raster*, first: usize, last: usize, per_plane: usize, sink: RowsSink, context: void*?) -> !:
+    let top = image.chunks[first].y
+    let rows = image.chunks[first].height if image.chunks[first].height < image.height - top else image.height - top
+    var part = *image
+    part.height = rows
+    part.pixels = try alloc f64[image.width * rows * image.channels.length] in memory.heap
+    defer free(part.pixels) in memory.heap
+    for index in 0..<part.pixels.length:
+        part.pixels[index] = 0.0
+    var one: Chunk[1] = ---
+    part.chunks = one[..<1]
+    for plane in 0..<image.chunks.length // per_plane:
+        for index in first..<last:
+            one[0] = image.chunks[plane * per_plane + index]
+            one[0].y = 0
+            try decode_chunk(&part, 0)
+    try sink(context, top, &part)
+
+func row_total(context: void*?, top: usize, part: const Raster*) -> !:
+    let seen = (f64*)(context else trap("a test sink lost its total"))
+    for y in 0..<part.height:
+        for x in 0..<part.width:
+            *seen += part.pixels[(y * part.width + x) * part.channels.length] * (f64)(top + y + 1)
+
+test "a stripped TIFF decodes a row of strips at a time, as a whole decode does":
+    var image = Raster(width = 40, height = 150)
+    defer image.close()
+    try image.standard(1, SampleType.uint8)
+    image.pixels = try alloc f64[40 * 150] in memory.heap
+    for index in 0..<image.pixels.length:
+        image.pixels[index] = (f64)((index * 7) % 251)
+    var output = Buffer()
+    defer output.close()
+    try encode(&image, &output, "zip")
+    var read = Raster()
+    defer read.close()
+    read.encoded = try alloc u8[output.used] in memory.heap
+    memory.copy(read.encoded, output.view(), output.used)
+    try probe(&read)
+    var total = 0.0
+    assert(try decode_rows(&read, row_total, (void*)&total))
+    var expected = 0.0
+    for y in 0..<(usize)150:
+        for x in 0..<(usize)40:
+            expected += image.pixels[y * 40 + x] * (f64)(y + 1)
+    assert(total == expected)
