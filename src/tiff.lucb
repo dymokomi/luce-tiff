@@ -1,8 +1,8 @@
 ## TIFF 6.0/BigTIFF directories, strips/tiles, separate planes and predictors.
 import memory
-import luce_std.math
-import luce_raster.binary
-import luce_compress.compress
+from luce_std import math
+from luce_raster import binary
+from luce_compress import compress
 from luce_raster.binary import Reader, Buffer
 from luce_raster.model import Raster, Chunk, SampleType
 from luce_raster.errors import corrupt, unsupported, invalid, limit
