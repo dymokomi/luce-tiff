@@ -1,31 +1,28 @@
 #prisma 4.0
 def package "luce-tiff" {
     str owner = "dymokomi"
-    str version = "0.1.4"
+    str version = "0.2.0"
     str kind = "package"
     str language = "luce-base"
     str description = "A TIFF reader and writer for Luce/Base: strips and tiles, uncompressed, PackBits, LZW and Deflate."
     str readme = "README.md"
+    str[] public = ["tiff"]
 
     def dependency "luce-raster" {
         str owner = "dymokomi"
-        str version = "^0.1.0"
+        str version = "^0.2.0"
         str path = "../luce-raster"
     }
 
     def dependency "luce-compress" {
         str owner = "dymokomi"
-        str version = "^0.2.0"
+        str version = "^0.4.0"
         str path = "../luce-compress"
-    }
-
-    def export "tiff" {
-        str module = "luce_tiff.tiff"
     }
 
     def dependency "luce-std" {
         str owner = "dymokomi"
-        str version = "^0.1.0"
+        str version = "^0.2.0"
         str path = "../luce-std"
     }
 }
