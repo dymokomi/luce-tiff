@@ -32,7 +32,7 @@ func field(image: const Raster*, directory: u64, big: bool, tag: u64) -> Field!:
         let items = try r.uint(8 if big else 4)
         let inline_bytes = try r.take(8 if big else 4)
         if name == tag:
-            let widths: usize[19] = [0,1,1,2,4,8,1,1,2,4,8,4,8,4,0,0,8,8,8]
+            let widths: usize[19] = [0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8, 4, 0, 0, 8, 8, 8]
             if kind >= 19 or widths[(usize)kind] == 0:
                 error(unsupported, "unsupported TIFF field type")
             let width = widths[(usize)kind]
@@ -80,7 +80,7 @@ pub func probe(image: Raster*) -> !:
         let entries = try directory.uint(8 if big else 2)
         if entries > 65536:
             error(limit, "TIFF directory exceeds entry limit")
-        discard(try directory.take((usize)entries * (20 if big else 12)))
+        _ = try directory.take((usize)entries * (20 if big else 12))
         offset = try directory.uint(8 if big else 4)
     if chosen == 0:
         error(invalid, "TIFF frame out of range")
@@ -136,7 +136,7 @@ pub func probe(image: Raster*) -> !:
     if image.orientation >= 5:
         image.width = h
         image.height = w
-    discard(try image.validate())
+    _ = try image.validate()
     let tiled = (try scalar(image, chosen, big, 322, 0)) != 0
     let tw = (usize)(try scalar(image, chosen, big, 322, (u64)w))
     var th = (usize)(try scalar(image, chosen, big, 323 if tiled else 278, (u64)h))
@@ -150,13 +150,13 @@ pub func probe(image: Raster*) -> !:
     let total = across * down * planes
     let offsets = try field(image, chosen, big, 324 if tiled else 273)
     let sizes = try field(image, chosen, big, 325 if tiled else 279)
-    if offsets.count != total or sizes.count != total or total > image.max_bytes // sizeof(Chunk):
+    if offsets.count != total or sizes.count != total or total > image.max_bytes // memory.size_of(Chunk):
         error(corrupt, "invalid TIFF chunk table")
     image.chunks = try new Chunk[total] in memory.heap
     for index in 0..<total:
         let start = try offsets.at(index)
         let size = try sizes.at(index)
-        discard(try binary.slice(image.encoded, start, size))
+        _ = try binary.slice(image.encoded, start, size)
         let local_index = index % (across * down)
         let y = local_index // across * th
         image.chunks[index] = Chunk(start, size, local_index % across * tw, y, tw, th if tiled else (h - y if h - y < th else th), index // (across * down))
@@ -269,7 +269,7 @@ pub func decode_chunk(image: Raster*, index: usize) -> !:
     let rowbytes = (chunk.width * stride * image.bits + 7) // 8
     if chunk.height > image.max_bytes // rowbytes:
         error(limit, "TIFF decoded chunk exceeds byte limit")
-    let raw = try alloc u8[rowbytes * chunk.height] in memory.heap
+    let raw = try new u8[rowbytes * chunk.height] --- in memory.heap
     defer free(raw) in memory.heap
     let data = try binary.slice(image.encoded, chunk.offset, chunk.size)
     if image.compression == 1:
@@ -288,7 +288,7 @@ pub func decode_chunk(image: Raster*, index: usize) -> !:
     let rows = source_height - chunk.y if source_height - chunk.y < chunk.height else chunk.height
     let kind = image.channels[0].kind
     let mask: u64 = 18446744073709551615 if image.bits == 64 else ((u64)1 << image.bits) - 1
-    let temporary = try alloc u8[rowbytes if image.predictor == 3 else 0] in memory.heap
+    let temporary = try new u8[rowbytes if image.predictor == 3 else 0] --- in memory.heap
     defer free(temporary) in memory.heap
     for y in 0..<rows:
         let row = raw[y * rowbytes..<(y + 1) * rowbytes]
@@ -495,7 +495,7 @@ func decode_chunk_row(image: Raster*, first: usize, last: usize, per_plane: usiz
     let rows = image.chunks[first].height if image.chunks[first].height < image.height - top else image.height - top
     var part = *image
     part.height = rows
-    part.pixels = try alloc f64[image.width * rows * image.channels.length] in memory.heap
+    part.pixels = try new f64[image.width * rows * image.channels.length] --- in memory.heap
     defer free(part.pixels) in memory.heap
     for index in 0..<part.pixels.length:
         part.pixels[index] = 0.0
@@ -518,7 +518,7 @@ test "a stripped TIFF decodes a row of strips at a time, as a whole decode does"
     var image = Raster(width = 40, height = 150)
     defer image.close()
     try image.standard(1, SampleType.uint8)
-    image.pixels = try alloc f64[40 * 150] in memory.heap
+    image.pixels = try new f64[40 * 150] --- in memory.heap
     for index in 0..<image.pixels.length:
         image.pixels[index] = (f64)((index * 7) % 251)
     var output = Buffer()
@@ -526,7 +526,7 @@ test "a stripped TIFF decodes a row of strips at a time, as a whole decode does"
     try encode(&image, &output, "zip")
     var read = Raster()
     defer read.close()
-    read.encoded = try alloc u8[output.used] in memory.heap
+    read.encoded = try new u8[output.used] --- in memory.heap
     memory.copy(read.encoded, output.view(), output.used)
     try probe(&read)
     var total = 0.0
